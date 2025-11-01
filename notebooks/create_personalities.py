@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.metrics import silhouette_score
 from pathlib import Path
 import pickle
 
@@ -14,34 +13,19 @@ feature_colunas = ['danceability', 'energy', 'valence',
 
 df = pd.read_csv(DATA_DIR / "spotify_tracks_clean.csv")
 
-if len(df) > 100000:
-    df_sample = df.sample(50000, random_state=42)
-else:
-    df_sample = df.copy()
-
-X = df_sample[feature_colunas].values
+X = df[feature_colunas].values
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
-best_score = -1
-best_k = 8
-
-for k in range(6, 11):
-    kmeans = MiniBatchKMeans(n_clusters=k, random_state=42, batch_size=2048, n_init=3)
-    labels = kmeans.fit_predict(X_scaled)
-    score = silhouette_score(X_scaled, labels, sample_size=5000)
-    print(f"K={k}: {score:.3f}")
-    
-    if score > best_score:
-        best_score = score
-        best_k = k
-
-X_full = scaler.transform(df[feature_colunas].values)
-kmeans_final = MiniBatchKMeans(n_clusters=best_k, random_state=42, batch_size=4096, n_init=5)
-df['personality_cluster'] = kmeans_final.fit_predict(X_full)
+print("Treinando modelo com K=7 (melhor score)...")
+kmeans = MiniBatchKMeans(n_clusters=7, random_state=42, batch_size=4096, n_init=10)
+df['personality_cluster'] = kmeans.fit_predict(X_scaled)
 
 cluster_profiles = df.groupby('personality_cluster')[feature_colunas].mean()
+print("\nPerfis dos clusters:")
+print(cluster_profiles.round(2))
 
+# 7 personalidades otimizadas
 personalities = {
     0: {'name': 'Explorador', 'emoji': '⚡',
         'vibe': 'Busca sons que te movem — intensidade é tua bússola.'},
@@ -53,31 +37,26 @@ personalities = {
         'vibe': 'As letras te definem — a música é tua confissão.'},
     4: {'name': 'Ritualista', 'emoji': '💃',
         'vibe': 'O ritmo te domina — dançar é tua forma de existir.'},
-    5: {'name': 'Maestro', 'emoji': '🎻',
-        'vibe': 'Ouve a estrutura invisível da música — pensa em notas, não em hits.'},
-    6: {'name': 'Sonhador', 'emoji': '☀️',
+    5: {'name': 'Sonhador', 'emoji': '☀️',
         'vibe': 'Espalha luz por onde passa — tua playlist é puro brilho.'},
-    7: {'name': 'Romântico', 'emoji': '🌙',
-        'vibe': 'Prefere o som suave, íntimo — música é abrigo e memória.'},
-    8: {'name': 'Rebelde', 'emoji': '🔥',
-        'vibe': 'Vive com atitude — o som é tua forma de dizer “eu existo”.'},
-    9: {'name': 'Eclético', 'emoji': '🌈',
-        'vibe': 'Não se prende a estilos — o mundo é tua playlist.'}
+    6: {'name': 'Romântico', 'emoji': '🌙',
+        'vibe': 'Prefere o som suave, íntimo — música é abrigo e memória.'}
 }
 
-personalities = {k: v for k, v in personalities.items() if k < best_k}
-
 model_data = {
-    'kmeans': kmeans_final,
+    'kmeans': kmeans,
     'scaler': scaler,
     'features': feature_colunas,
-    'n_clusters': best_k,
+    'n_clusters': 7,
     'personalities': personalities,
     'cluster_profiles': cluster_profiles.to_dict()
 }
 
-with open(f'{DATA_DIR}/model.pkl', 'wb') as f:
+with open(DATA_DIR / 'model.pkl', 'wb') as f:
     pickle.dump(model_data, f)
 
-df.to_csv(f'{DATA_DIR}/tracks_resumido.csv', index=False)
+cols_save = ['id', 'name', 'artists', 'personality_cluster'] + feature_colunas
+df[cols_save].to_csv(DATA_DIR / 'tracks_clustered.csv', index=False)
 
+print("\nDistribuição:")
+print(df['personality_cluster'].value_counts().sort_index())
