@@ -1,11 +1,8 @@
 import streamlit as st
 import pandas as pd
 import pickle
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import plotly.graph_objects as go
 import numpy as np
-from notebooks.config import SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI
 
 st.set_page_config(page_title="Vibify", page_icon="🎵", layout="wide")
 
@@ -21,31 +18,11 @@ def load_tracks():
 model_data = load_model()
 df_tracks = load_tracks()
 
-def get_spotify_client():
-    return spotipy.Spotify(auth_manager=SpotifyOAuth(
-        client_id=SPOTIPY_CLIENT_ID,
-        client_secret=SPOTIPY_CLIENT_SECRET,
-        redirect_uri=SPOTIPY_REDIRECT_URI,
-        scope="user-top-read user-library-read",
-        cache_path=".spotify_cache"
-    ))
-
-def get_user_features(sp):
-    results = sp.current_user_top_tracks(limit=50, time_range='medium_term')
-    track_ids = [item['id'] for item in results['items']]
-    
-    features = sp.audio_features(track_ids)
-    
-    df_features = pd.DataFrame([{
-        'danceability': f['danceability'],
-        'energy': f['energy'],
-        'valence': f['valence'],
-        'acousticness': f['acousticness'],
-        'instrumentalness': f['instrumentalness'],
-        'speechiness': f['speechiness']
-    } for f in features if f])
-    
-    return df_features.mean()
+def simulate_user_taste():
+    """Simula gosto do usuário pegando músicas aleatórias"""
+    sample = df_tracks.sample(10)
+    features = ['danceability', 'energy', 'valence', 'acousticness', 'instrumentalness', 'speechiness']
+    return sample[features].mean()
 
 def classify_user(user_avg):
     user_scaled = model_data['scaler'].transform([user_avg])
@@ -60,30 +37,23 @@ def recommend_tracks(user_cluster, n=10):
 st.title("🎵 Vibify")
 st.markdown("### Descubra sua personalidade musical")
 
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+if 'analyzed' not in st.session_state:
+    st.session_state.analyzed = False
 
-if not st.session_state.authenticated:
-    st.info("Conecte sua conta Spotify para começar")
+if not st.session_state.analyzed:
+    st.info("🎲 Clique abaixo para descobrir sua personalidade musical")
+    st.caption("_(Simulando análise com músicas aleatórias para demonstração)_")
     
-    if st.button("🎵 Conectar Spotify", type="primary"):
-        try:
-            sp = get_spotify_client()
-            st.session_state.sp = sp
-            st.session_state.authenticated = True
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro: {e}")
+    if st.button("🎵 Analisar Meu Gosto Musical", type="primary"):
+        st.session_state.analyzed = True
+        st.rerun()
 
 else:
-    sp = st.session_state.sp
-    
     with st.spinner("Analisando suas músicas..."):
-        user_avg = get_user_features(sp)
+        user_avg = simulate_user_taste()
         user_cluster = classify_user(user_avg)
         personality = model_data['personalities'][user_cluster]
     
-    # Resultado
     st.success("✨ Análise completa!")
     
     col1, col2 = st.columns([1, 2])
@@ -117,8 +87,7 @@ else:
     
     st.markdown("---")
     
-    # Recomendações
-    st.header("🔮 Músicas Recomendadas")
+    st.header("🔮 Músicas Recomendadas Para Você")
     
     recommendations = recommend_tracks(user_cluster, 10)
     
@@ -130,9 +99,8 @@ else:
         with col2:
             st.markdown(f"_{row['artists']}_")
         with col3:
-            if 'id' in row:
-                st.markdown(f"[▶️]({f'https://open.spotify.com/track/{row.id}'})")
+            st.markdown(f"[▶️](https://open.spotify.com/track/{row['id']})")
     
-    if st.button("🔄 Nova análise"):
-        st.session_state.authenticated = False
+    if st.button("🔄 Nova Análise"):
+        st.session_state.analyzed = False
         st.rerun()
